@@ -8,6 +8,7 @@
 #include "SNES/SnesControlManager.h"
 #include "SNES/SnesDmaController.h"
 #include "SNES/Debugger/SnesPpuTools.h"
+#include "SNES/Debugger/SnesEventManager.h"
 #include "Debugger/Debugger.h"
 #include "Shared/Emulator.h"
 #include "Shared/EmuSettings.h"
@@ -1531,6 +1532,12 @@ void SnesPpu::SendFrame()
 	}
 	_needFullFrame = false;
 
+	if(!_skipRender && !_emu->IsRunAheadFrame() && _emu->IsDebugging()) {
+		if(auto* eventManager = _emu->InternalGetDebugger()->GetEventManager(CpuType::Snes)) {
+			static_cast<SnesEventManager*>(eventManager)->RecordCompletedFrame(_currentBuffer, width, height);
+		}
+	}
+
 	RenderedFrame frame(_currentBuffer, width, height, _useHighResOutput ? 0.5 : 1.0, _frameCount, _console->GetControlManager()->GetPortStates());
 	_emu->GetVideoDecoder()->UpdateFrame(frame, isRewinding, isRewinding);
 
@@ -2436,8 +2443,15 @@ void SnesPpu::Serialize(Serializer& s)
 		SV(_fetchSpriteEnd);
 	}
 
-	if(!s.IsSaving() && _interlacedFrame && _emu->GetRewindManager()->IsRewinding()) {
-		_needFullFrame = true;
+	if(!s.IsSaving()) {
+		if(s.GetFormat() != SerializeFormat::Map && _emu->IsDebugging()) {
+			if(auto* eventManager = _emu->InternalGetDebugger()->GetEventManager(CpuType::Snes)) {
+				static_cast<SnesEventManager*>(eventManager)->ResetRasterObservation();
+			}
+		}
+		if(_interlacedFrame && _emu->GetRewindManager()->IsRewinding()) {
+			_needFullFrame = true;
+		}
 	}
 }
 

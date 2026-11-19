@@ -45,6 +45,8 @@ Other builds are also available in the [Actions](https://github.com/nesdev-org/M
 
 See [COMPILING.md](COMPILING.md)
 
+For automated SNES testing, see the [headless guide for AI agents](docs/AGENT_GUIDE.md).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md)
