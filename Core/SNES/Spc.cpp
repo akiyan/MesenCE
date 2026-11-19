@@ -265,6 +265,9 @@ uint8_t Spc::Read(uint16_t addr, MemoryOperationType type)
 	}
 
 #ifndef DUMMYSPC
+	if(addr >= 0xF4 && addr <= 0xF7) {
+		RecordAudioAccess(SnesAudioEventType::SpcRead, addr, value);
+	}
 	_emu->ProcessMemoryRead<CpuType::Spc>(addr, value, type);
 #else
 	LogMemoryOperation(addr, value, type);
@@ -325,13 +328,14 @@ void Spc::Write(uint16_t addr, uint8_t value, MemoryOperationType type)
 		case 0xF3:
 			if(_state.DspReg < 128) {
 				_dsp->Write(_state.DspReg, value);
+				RecordAudioAccess(SnesAudioEventType::DspWrite, _state.DspReg, value);
 			}
 			break;
 
-		case 0xF4: _state.OutputReg[0] = value; break;
-		case 0xF5: _state.OutputReg[1] = value; break;
-		case 0xF6: _state.OutputReg[2] = value; break;
-		case 0xF7: _state.OutputReg[3] = value; break;
+		case 0xF4: case 0xF5: case 0xF6: case 0xF7:
+			_state.OutputReg[addr & 3] = value;
+			RecordAudioAccess(SnesAudioEventType::SpcWrite, addr, value);
+			break;
 		case 0xF8: _state.RamReg[0] = value; break;
 		case 0xF9: _state.RamReg[1] = value; break;
 
@@ -349,12 +353,19 @@ void Spc::Write(uint16_t addr, uint8_t value, MemoryOperationType type)
 uint8_t Spc::CpuReadRegister(uint16_t addr)
 {
 	Run();
-	return _state.OutputReg[addr & 0x03];
+	uint8_t value = _state.OutputReg[addr & 0x03];
+#ifndef DUMMYSPC
+	RecordAudioAccess(SnesAudioEventType::CpuRead, 0x2140 | (addr & 3), value, true);
+#endif
+	return value;
 }
 
 void Spc::CpuWriteRegister(uint32_t addr, uint8_t value)
 {
 	Run();
+#ifndef DUMMYSPC
+	RecordAudioAccess(SnesAudioEventType::CpuWrite, 0x2140 | (addr & 3), value, true);
+#endif
 	if(_state.NewCpuRegs[addr & 0x03] != value) {
 		_state.NewCpuRegs[addr & 0x03] = value;
 
@@ -371,6 +382,21 @@ void Spc::CpuWriteRegister(uint32_t addr, uint8_t value)
 		}
 	}
 }
+
+#ifndef DUMMYSPC
+void Spc::RecordAudioAccess(SnesAudioEventType type, uint16_t address, uint8_t value, bool fromCpu)
+{
+	SoundMixer* mixer = _emu->GetSoundMixer();
+	if(mixer->IsSnesAudioCaptureRecording()) {
+		uint64_t clock = _memoryManager->GetMasterClock();
+		if(!fromCpu) {
+			// The SPC can catch up several instructions within one CPU tick.
+			clock = std::min(clock, (uint64_t)(_state.Cycle / _clockRatio));
+		}
+		mixer->RecordSnesAudioEvent(type, clock, _state.Cycle, address, value);
+	}
+}
+#endif
 
 uint8_t Spc::DspReadRam(uint16_t addr)
 {

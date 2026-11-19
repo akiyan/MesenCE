@@ -112,6 +112,9 @@
     <ClCompile Include="Debugger\LuaApi.cpp">
       <Filter>Debugger</Filter>
     </ClCompile>
+    <ClCompile Include="Debugger\LuaApiSnesPpu.cpp">
+      <Filter>Debugger</Filter>
+    </ClCompile>
     <ClInclude Include="Debugger\LuaApi.h">
       <Filter>Debugger</Filter>
     </ClInclude>

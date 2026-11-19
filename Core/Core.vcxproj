@@ -1041,6 +1041,7 @@
     <ClCompile Include="Shared\KeyManager.cpp" />
     <ClCompile Include="Debugger\LabelManager.cpp" />
     <ClCompile Include="Debugger\LuaApi.cpp" />
+    <ClCompile Include="Debugger\LuaApiSnesPpu.cpp" />
     <ClCompile Include="Debugger\LuaCallHelper.cpp" />
     <ClCompile Include="Debugger\MemoryAccessCounter.cpp" />
     <ClCompile Include="Debugger\MemoryDumper.cpp" />

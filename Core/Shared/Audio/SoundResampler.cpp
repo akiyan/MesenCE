@@ -28,7 +28,8 @@ uint32_t SoundResampler::GetTargetRate()
 double SoundResampler::GetTargetRateAdjustment()
 {
 	AudioConfig cfg = _emu->GetSettings()->GetAudioConfig();
-	bool isRecording = _emu->GetSoundMixer()->IsRecording() || _emu->GetVideoRenderer()->IsRecording();
+	auto* mixer = _emu->GetSoundMixer();
+	bool isRecording = mixer->IsRecording() || mixer->IsSnesAudioCaptureRecording() || _emu->GetVideoRenderer()->IsRecording();
 	if(!isRecording && !cfg.DisableDynamicSampleRate) {
 		//Don't deviate from selected sample rate while recording
 		//TODO: Have 2 output streams (one for recording, one for the speakers)

@@ -13,6 +13,7 @@
 #include "Shared/Video/DebugHud.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Shared/MessageManager.h"
+#include "Shared/Audio/SoundMixer.h"
 #include "Shared/CheatManager.h"
 #include "Shared/RewindManager.h"
 #include "Shared/SaveStateManager.h"
@@ -136,6 +137,10 @@ int LuaApi::GetLibrary(lua_State* lua)
 		{ "rewind", LuaApi::Rewind },
 
 		{ "takeScreenshot", LuaApi::TakeScreenshot },
+		{ "enableSnesFrameCapture", LuaApi::EnableSnesFrameCapture },
+		{ "getSnesPpuSnapshot", LuaApi::GetSnesPpuSnapshot },
+		{ "startSnesPpuTrace", LuaApi::StartSnesPpuTrace },
+		{ "stopSnesPpuTrace", LuaApi::StopSnesPpuTrace },
 
 		{ "isKeyPressed", LuaApi::IsKeyPressed },
 		{ "getInput", LuaApi::GetInput },
@@ -164,6 +169,8 @@ int LuaApi::GetLibrary(lua_State* lua)
 
 		{ "getScriptDataFolder", LuaApi::GetScriptDataFolder },
 		{ "getRomInfo", LuaApi::GetRomInfo },
+		{ "startSnesAudioCapture", LuaApi::StartSnesAudioCapture },
+		{ "getSnesAudioCapture", LuaApi::GetSnesAudioCapture },
 		{ "getLogWindowLog", LuaApi::GetLogWindowLog },
 		{ NULL, NULL }
 	};
@@ -1222,4 +1229,57 @@ int LuaApi::GetMasterClock(lua_State* lua)
 	checkparams();
 	l.Return(_emu->GetMasterClock());
 	return l.ReturnCount();
+}
+
+int LuaApi::StartSnesAudioCapture(lua_State* lua)
+{
+	if(lua_gettop(lua) != 3) {
+		return luaL_error(lua, "expected WAV path, event path and frame count");
+	}
+	if(!_emu->GetSettings()->GetDebugConfig().ScriptAllowIoOsAccess) {
+		return luaL_error(lua, "audio capture requires Lua file I/O access");
+	}
+	size_t wavSize, eventsSize;
+	const char* wavPath = luaL_checklstring(lua, 1, &wavSize);
+	const char* eventsPath = luaL_checklstring(lua, 2, &eventsSize);
+	lua_Integer frames = luaL_checkinteger(lua, 3);
+	if(wavSize == 0 || eventsSize == 0 || memchr(wavPath, 0, wavSize) || memchr(eventsPath, 0, eventsSize)) {
+		return luaL_error(lua, "invalid audio capture output paths");
+	}
+	if(frames < 1 || frames > 3600) {
+		return luaL_error(lua, "audio capture requires 1 to 3600 frames");
+	}
+	string failure = _emu->GetSoundMixer()->StartSnesAudioCapture(wavPath, eventsPath, (uint32_t)frames);
+	if(!failure.empty()) {
+		lua_pushnil(lua);
+		lua_pushlstring(lua, failure.data(), failure.size());
+		return 2;
+	}
+	lua_pushboolean(lua, true);
+	return 1;
+}
+
+int LuaApi::GetSnesAudioCapture(lua_State* lua)
+{
+	if(lua_gettop(lua) != 0) {
+		return luaL_error(lua, "expected no parameters");
+	}
+	SnesAudioCaptureStatus status = _emu->GetSoundMixer()->GetSnesAudioCapture();
+	constexpr const char* stateNames[] = { "idle", "armed", "recording", "complete", "error" };
+	lua_newtable(lua);
+	lua_pushstring(lua, stateNames[(unsigned)status.State]);
+	lua_setfield(lua, -2, "state");
+	auto setNumber = [&](const char* name, uint64_t value) {
+		lua_pushinteger(lua, (lua_Integer)value);
+		lua_setfield(lua, -2, name);
+	};
+	setNumber("sampleRate", status.SampleRate);
+	setNumber("clockRate", status.ClockRate);
+	setNumber("frames", status.Frames);
+	setNumber("events", status.Events);
+	setNumber("droppedEvents", status.DroppedEvents);
+	setNumber("startClock", status.StartClock);
+	setNumber("endClock", status.EndClock);
+	setNumber("samples", status.Samples);
+	return 1;
 }
