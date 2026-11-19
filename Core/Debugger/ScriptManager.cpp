@@ -22,12 +22,18 @@ ScriptManager::~ScriptManager()
 
 int ScriptManager::LoadScript(string name, string path, string content, int32_t scriptId)
 {
+	bool loaded;
+	return LoadScript(std::move(name), std::move(path), std::move(content), scriptId, loaded);
+}
+
+int ScriptManager::LoadScript(string name, string path, string content, int32_t scriptId, bool& loaded)
+{
 	DebugBreakHelper helper(_debugger);
 	auto lock = _scriptLock.AcquireSafe();
 
 	if(scriptId < 0) {
 		unique_ptr<ScriptHost> script(new ScriptHost(_nextScriptId++));
-		script->LoadScript(name, path, content, _debugger);
+		loaded = script->LoadScript(name, path, content, _debugger);
 		scriptId = script->GetScriptId();
 		_scripts.push_back(std::move(script));
 		_hasScript = true;
@@ -40,12 +46,13 @@ int ScriptManager::LoadScript(string name, string path, string content, int32_t 
 			//Send a ScriptEnded event before reloading the code
 			(*result)->ProcessEvent(EventType::ScriptEnded, _debugger->GetMainCpuType());
 
-			(*result)->LoadScript(name, path, content, _debugger);
+			loaded = (*result)->LoadScript(name, path, content, _debugger);
 			RefreshMemoryCallbackFlags();
 			return scriptId;
 		}
 	}
 
+	loaded = false;
 	return -1;
 }
 

@@ -209,6 +209,16 @@ ui: InteropDLL/$(OBJFOLDER)/$(SHAREDLIB)
 
 core: InteropDLL/$(OBJFOLDER)/$(SHAREDLIB)
 
+ifeq ($(MESENOS),linux)
+.PHONY: headless
+headless: bin/mesen-headless
+
+HEADLESS_SOURCES := Headless/MesenHeadless.cpp Headless/ControlSession.cpp Headless/NamedStates.cpp
+
+bin/mesen-headless: $(HEADLESS_SOURCES) $(wildcard Headless/*.h) InteropDLL/$(OBJFOLDER)/$(SHAREDLIB)
+	$(CXX) $(CXXFLAGS) $(LINKCHECKUNRESOLVED) -o $@ $(HEADLESS_SOURCES) -LInteropDLL/$(OBJFOLDER) -l:$(SHAREDLIB) -Wl,-rpath,'$$ORIGIN/../InteropDLL/$(OBJFOLDER)' -pthread -ldl
+endif
+
 pgohelper: InteropDLL/$(OBJFOLDER)/$(SHAREDLIB)
 	mkdir -p PGOHelper/$(OBJFOLDER) && cd PGOHelper/$(OBJFOLDER) && $(CXX) $(CXXFLAGS) $(LINKCHECKUNRESOLVED) -o pgohelper ../PGOHelper.cpp ../../bin/pgohelperlib.so -pthread $(FSLIB) $(SDL2LIB) $(LIBEVDEVLIB) $(X11LIB)
 
@@ -243,3 +253,4 @@ clean:
 	rm -r -f $(LUAOBJ)
 	rm -r -f $(MACOSOBJ)
 	rm -r -f $(DLLOBJ)
+	rm -f bin/mesen-headless

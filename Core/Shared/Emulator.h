@@ -9,6 +9,7 @@
 #include "Utilities/Timer.h"
 #include "Utilities/safe_ptr.h"
 #include "Utilities/SimpleLock.h"
+#include <functional>
 #include "Utilities/VirtualFile.h"
 
 class Debugger;
@@ -159,6 +160,8 @@ public:
 	void Release();
 
 	void Run();
+	// Called on the running thread with the emulator held between frames.
+	void RunWithFrameBoundary(const std::function<bool()>& beforeFrame);
 	void Stop(bool sendNotification, bool preventRecentGameSave = false, bool saveBattery = true);
 
 	void OnBeforeSendFrame();
