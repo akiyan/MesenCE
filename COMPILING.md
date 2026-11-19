@@ -14,6 +14,8 @@ Once SDL2 and the .NET 8 SDK are installed, run `make` to compile with Clang.
 To compile with GCC instead, use `USE_GCC=true make`.  
 **Note:** Mesen usually runs faster when built with Clang instead of GCC.
 
+The Linux [native headless runner](docs/headless.md) uses the `headless` make target.
+
 
 ## macOS
 
