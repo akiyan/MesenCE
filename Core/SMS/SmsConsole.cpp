@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "Shared/Audio/SoundMixer.h"
 #include "SMS/SmsConsole.h"
 #include "SMS/SmsCpu.h"
 #include "SMS/SmsControlManager.h"
@@ -163,6 +164,7 @@ void SmsConsole::RunFrame()
 
 	_psg->Run();
 	_psg->PlayQueuedAudio();
+	_emu->GetSoundMixer()->EndAudioCaptureFrame(_vdp->GetFrameCount(), GetMasterClock(), GetMasterClockRate());
 }
 
 void SmsConsole::ProcessEndOfFrame()

@@ -18,6 +18,8 @@ class SmsPsg;
 class SmsFmAudio;
 class SmsBiosMapper;
 
+enum class AudioEventType;
+
 class SmsMemoryManager final : public ISerializable
 {
 private:
@@ -65,6 +67,7 @@ private:
 	template<bool isPeek> uint8_t ReadGameGearPort(uint8_t port);
 	void WriteGameGearPort(uint8_t port, uint8_t value);
 	void WriteSmsPort(uint8_t port, uint8_t value);
+	void RecordAudioWrite(AudioEventType type, uint8_t port, uint8_t value);
 	void WriteColecoVisionPort(uint8_t port, uint8_t value);
 
 	uint32_t DetectSgCartRam(vector<uint8_t>& romData);
