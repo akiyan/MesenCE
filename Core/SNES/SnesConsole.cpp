@@ -25,6 +25,7 @@
 #include "Shared/Emulator.h"
 #include "Shared/TimingInfo.h"
 #include "Shared/EmuSettings.h"
+#include "Shared/Audio/SoundMixer.h"
 #include "Shared/BaseControlManager.h"
 #include "Utilities/Serializer.h"
 #include "Utilities/VirtualFile.h"
@@ -75,6 +76,7 @@ void SnesConsole::ProcessEndOfFrame()
 	//when a very long DMA transfer is running across multiple frames.
 	//(RunFrame above can run more than one frame in this scenario, which could cause crashes)
 	_spc->ProcessEndFrame();
+	_emu->GetSoundMixer()->EndAudioCaptureFrame(GetFrameCount(), GetMasterClock(), GetMasterClockRate());
 
 	_emu->ProcessEndOfFrame();
 

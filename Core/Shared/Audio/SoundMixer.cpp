@@ -11,6 +11,107 @@
 #include "Utilities/Audio/Equalizer.h"
 #include "Utilities/Audio/ReverbFilter.h"
 #include "Utilities/Audio/CrossFeedFilter.h"
+#include <filesystem>
+
+class AudioCapture
+{
+	static constexpr uint32_t MaxEvents = 1000000;
+
+	WaveRecorder _wav;
+	ofstream _events;
+	uint32_t _requestedFrames;
+	uint32_t _lastFrame = 0;
+
+public:
+	AudioCaptureStatus Status;
+
+	AudioCapture(const string& wavPath, const string& eventsPath, uint32_t frames, uint32_t sampleRate)
+		: _wav(wavPath, sampleRate, true), _events(eventsPath, ios::out | ios::binary), _requestedFrames(frames)
+	{
+		Status.State = AudioCaptureState::Armed;
+		Status.SampleRate = sampleRate;
+	}
+
+	bool IsOpen() const
+	{
+		return _wav.IsOpen() && _events.good();
+	}
+
+	void Abort()
+	{
+		Status.State = AudioCaptureState::Error;
+		_wav.Finish();
+		_events.close();
+	}
+
+	void EndFrame(uint32_t frame, uint64_t clock, uint32_t clockRate)
+	{
+		if(Status.State == AudioCaptureState::Armed) {
+			Status.State = AudioCaptureState::Recording;
+			Status.StartClock = clock;
+			Status.EndClock = clock;
+			Status.ClockRate = clockRate;
+			_lastFrame = frame;
+			_events << "{\"kind\":\"start\",\"frame\":" << frame << ",\"masterClock\":" << clock
+				<< ",\"clockRate\":" << clockRate << ",\"sampleRate\":" << Status.SampleRate << "}\n";
+		} else if(Status.State == AudioCaptureState::Recording) {
+			if(frame != _lastFrame + 1 || clock <= Status.EndClock || clockRate != Status.ClockRate) {
+				Abort();
+				return;
+			}
+			_lastFrame = frame;
+			Status.EndClock = clock;
+			Status.Frames++;
+			_events << "{\"kind\":\"frame\",\"frame\":" << frame << ",\"masterClock\":" << clock
+				<< ",\"samples\":" << Status.Samples << "}\n";
+			if(Status.Frames == _requestedFrames) {
+				if(!_wav.Finish()) {
+					Abort();
+					return;
+				}
+				_events << "{\"kind\":\"end\",\"frames\":" << Status.Frames
+					<< ",\"samples\":" << Status.Samples << ",\"events\":" << Status.Events
+					<< ",\"droppedEvents\":" << Status.DroppedEvents << "}\n";
+				_events.close();
+				Status.State = _events.good() ? AudioCaptureState::Complete : AudioCaptureState::Error;
+				return;
+			}
+		}
+		if(!_events.good() && Status.State == AudioCaptureState::Recording) {
+			Abort();
+		}
+	}
+
+	void WriteSamples(int16_t* samples, uint32_t count, uint32_t sampleRate)
+	{
+		if(_wav.WriteSamples(samples, count, sampleRate, true)) {
+			Status.Samples += count;
+		} else {
+			Abort();
+		}
+	}
+
+	void RecordEvent(AudioEventType type, uint64_t clock, uint64_t spcCycle, uint16_t address, uint8_t value)
+	{
+		if(clock < Status.StartClock) {
+			return;
+		}
+		if(Status.Events >= MaxEvents) {
+			Status.DroppedEvents++;
+			return;
+		}
+		constexpr const char* kinds[] = { "cpu_read", "cpu_write", "spc_read", "spc_write", "dsp_write", "psg_write", "psg_stereo" };
+		_events << "{\"kind\":\"" << kinds[(unsigned)type] << "\",\"masterClock\":" << clock;
+		if(type < AudioEventType::PsgWrite) {
+			_events << ",\"spcCycle\":" << spcCycle;
+		}
+		_events << ",\"address\":" << address << ",\"value\":" << (unsigned)value << "}\n";
+		Status.Events++;
+		if(!_events.good()) {
+			Abort();
+		}
+	}
+};
 
 SoundMixer::SoundMixer(Emulator* emu)
 {
@@ -74,7 +175,7 @@ void SoundMixer::PlayAudioBuffer(int16_t* samples, uint32_t sampleCount, uint32_
 	EmuSettings* settings = _emu->GetSettings();
 	AudioPlayerHud* audioPlayer = _emu->GetAudioPlayerHud();
 	AudioConfig cfg = settings->GetAudioConfig();
-	bool isRecording = _waveRecorder || _emu->GetVideoRenderer()->IsRecording();
+	bool isRecording = _waveRecorder || IsAudioCaptureRecording() || _emu->GetVideoRenderer()->IsRecording();
 
 	uint32_t masterVolume = audioPlayer ? audioPlayer->GetVolume() : cfg.MasterVolume;
 	if(!isRecording) {
@@ -130,6 +231,9 @@ void SoundMixer::PlayAudioBuffer(int16_t* samples, uint32_t sampleCount, uint32_
 	RewindManager* rewindManager = _emu->GetRewindManager();
 	if(!_emu->IsRunAheadFrame() && rewindManager && rewindManager->SendAudio(out, count)) {
 		if(isRecording) {
+			if(IsAudioCaptureRecording()) {
+				_audioCapture->WriteSamples(out, count, cfg.SampleRate);
+			}
 			shared_ptr<WaveRecorder> recorder = _waveRecorder.lock();
 			if(recorder) {
 				if(!recorder->WriteSamples(out, count, cfg.SampleRate, true)) {
@@ -196,6 +300,59 @@ void SoundMixer::StopRecording()
 bool SoundMixer::IsRecording()
 {
 	return _waveRecorder != nullptr;
+}
+
+string SoundMixer::StartAudioCapture(const string& wavPath, const string& eventsPath, uint32_t frames)
+{
+	ConsoleType console = _emu->GetConsoleType();
+	if((console != ConsoleType::Snes && console != ConsoleType::Sms) || _emu->GetSettings()->GetEmulationConfig().RunAheadFrames != 0) {
+		return "audio capture requires SNES, Master System or Game Gear with run-ahead disabled";
+	}
+	if(frames < 1 || frames > AudioCaptureMaxFrames) {
+		return "audio capture requires 1 to 216000 frames";
+	}
+	if(_audioCapture && (_audioCapture->Status.State == AudioCaptureState::Armed || IsAudioCaptureRecording())) {
+		return "an audio capture is already active";
+	}
+
+	namespace fs = std::filesystem;
+	std::error_code wavError, eventsError;
+	auto wav = fs::weakly_canonical(wavPath, wavError);
+	auto events = fs::weakly_canonical(eventsPath, eventsError);
+	if(wavError || eventsError || wav.empty() || events.empty() || wav == events ||
+		fs::exists(wav, wavError) || fs::exists(events, eventsError) || wavError || eventsError) {
+		return "WAV and event output must be two distinct new files";
+	}
+	auto capture = std::make_unique<AudioCapture>(wav.string(), events.string(), frames, _emu->GetSettings()->GetAudioConfig().SampleRate);
+	if(!capture->IsOpen()) {
+		return "could not open WAV or event output";
+	}
+	_audioCapture = std::move(capture);
+	return {};
+}
+
+AudioCaptureStatus SoundMixer::GetAudioCapture() const
+{
+	return _audioCapture ? _audioCapture->Status : AudioCaptureStatus {};
+}
+
+bool SoundMixer::IsAudioCaptureRecording() const
+{
+	return _audioCapture && _audioCapture->Status.State == AudioCaptureState::Recording;
+}
+
+void SoundMixer::EndAudioCaptureFrame(uint32_t frame, uint64_t masterClock, uint32_t clockRate)
+{
+	if(_audioCapture) {
+		_audioCapture->EndFrame(frame, masterClock, clockRate);
+	}
+}
+
+void SoundMixer::RecordAudioEvent(AudioEventType type, uint64_t masterClock, uint64_t spcCycle, uint16_t address, uint8_t value)
+{
+	if(IsAudioCaptureRecording()) {
+		_audioCapture->RecordEvent(type, masterClock, spcCycle, address, value);
+	}
 }
 
 void SoundMixer::GetLastSamples(int16_t& left, int16_t& right)

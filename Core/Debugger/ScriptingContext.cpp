@@ -361,7 +361,8 @@ void ScriptingContext::InternalCallMemoryCallback(AddressInfo relAddr, T& value,
 			continue;
 		}
 
-		if(DebugUtilities::IsRelativeMemory(callback.MemType)) {
+		if(DebugUtilities::IsRelativeMemory(callback.MemType) || callback.MemType == relAddr.Type) {
+			// I/O port spaces (such as SmsPort) have no absolute address: match the access itself.
 			if(!IsAddressMatch(callback, relAddr)) {
 				continue;
 			}

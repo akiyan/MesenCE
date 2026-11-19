@@ -11,11 +11,12 @@ private:
 
 	void WriteHeader();
 	void UpdateSizeValues();
-	void CloseFile();
 
 public:
 	WaveRecorder(string outputFile, uint32_t sampleRate, bool isStereo);
 	~WaveRecorder();
 
+	bool IsOpen() const;
+	bool Finish();
 	bool WriteSamples(int16_t* samples, uint32_t sampleCount, uint32_t sampleRate, bool isStereo);
 };

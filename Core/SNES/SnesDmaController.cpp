@@ -129,6 +129,8 @@ bool SnesDmaController::InitHdmaChannels()
 	_dmaClockCounter += 8;
 	_memoryManager->IncMasterClock8();
 
+	uint8_t originalActiveChannel = _activeChannel;
+
 	for(int i = 0; i < 8; i++) {
 		DmaChannelConfig& ch = _state.Channel[i];
 
@@ -136,6 +138,7 @@ bool SnesDmaController::InitHdmaChannels()
 		ch.DoTransfer = true;
 
 		if(_state.HdmaChannels & (1 << i)) {
+			_activeChannel = HdmaChannelFlag | i;
 			//"1. Copy AAddress into Address."
 			ch.HdmaTableAddress = ch.SrcAddress;
 			ch.DmaActive = false;
@@ -172,6 +175,7 @@ bool SnesDmaController::InitHdmaChannels()
 		SyncEndDma();
 	}
 
+	_activeChannel = originalActiveChannel;
 	UpdateNeedToProcessFlag();
 	return true;
 }
@@ -275,6 +279,7 @@ bool SnesDmaController::ProcessHdmaChannels()
 		if((_state.HdmaChannels & (1 << i)) == 0 || ch.HdmaFinished) {
 			continue;
 		}
+		_activeChannel = HdmaChannelFlag | i;
 
 		//3. Decrement $43xA.
 		ch.HdmaLineCounterAndRepeat--;
