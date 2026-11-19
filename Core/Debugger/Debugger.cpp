@@ -27,6 +27,7 @@
 #include "SNES/Coprocessors/DSP/NecDspTypes.h"
 #include "SNES/Coprocessors/ST018/ArmV3Types.h"
 #include "SNES/Debugger/SnesDebugger.h"
+#include "SNES/Debugger/SnesEventManager.h"
 #include "SNES/Debugger/SpcDebugger.h"
 #include "SNES/Debugger/GsuDebugger.h"
 #include "SNES/Debugger/St018Debugger.h"
@@ -589,6 +590,11 @@ void Debugger::InternalProcessInterrupt(CpuType cpuType, IDebugger& dbg, StepReq
 void Debugger::ProcessEvent(EventType type, std::optional<CpuType> cpuTypeOpt)
 {
 	CpuType evtCpuType = cpuTypeOpt.value_or(_mainCpuType);
+	if(_consoleType == ConsoleType::Snes && type == EventType::Reset) {
+		if(auto* eventManager = GetEventManager(CpuType::Snes)) {
+			static_cast<SnesEventManager*>(eventManager)->ResetRasterObservation();
+		}
+	}
 	_scriptManager->ProcessEvent(type, evtCpuType);
 
 	switch(type) {

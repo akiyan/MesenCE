@@ -226,7 +226,12 @@ void SnesDebugger::ProcessRead(uint32_t addr, uint8_t value, MemoryOperationType
 	InstructionProgress.LastMemOperation = operation;
 	SnesCpuState& state = GetCpuState();
 
-	if(IsRegister(addr)) {
+	bool isRegister = IsRegister(addr);
+	auto* eventManager = static_cast<SnesEventManager*>(_eventManager.get());
+	if(eventManager->IsRasterTraceActive()) {
+		eventManager->RecordRasterBusOperation(operation, isRegister);
+	}
+	if(isRegister) {
 		_eventManager->AddEvent(DebugEventType::Register, operation);
 	}
 
@@ -287,7 +292,12 @@ void SnesDebugger::ProcessWrite(uint32_t addr, uint8_t value, MemoryOperationTyp
 		_disassembler->InvalidateCache(addressInfo, _cpuType);
 	}
 
-	if(IsRegister(addr)) {
+	bool isRegister = IsRegister(addr);
+	auto* eventManager = static_cast<SnesEventManager*>(_eventManager.get());
+	if(eventManager->IsRasterTraceActive()) {
+		eventManager->RecordRasterBusOperation(operation, isRegister);
+	}
+	if(isRegister) {
 		_eventManager->AddEvent(DebugEventType::Register, operation);
 	}
 

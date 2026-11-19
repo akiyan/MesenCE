@@ -1,4 +1,5 @@
 #include "pch.h"
+#include <utility>
 #include "SNES/Debugger/SnesEventManager.h"
 #include "SNES/SnesCpu.h"
 #include "SNES/SnesPpu.h"
@@ -27,6 +28,88 @@ SnesEventManager::~SnesEventManager()
 	delete[] _ppuBuffer;
 }
 
+SnesRasterTiming SnesEventManager::GetRasterTiming()
+{
+	return {
+		_memoryManager->GetMasterClock(),
+		_ppu->GetFrameCount(),
+		_ppu->GetScanline(),
+		_memoryManager->GetHClock()
+	};
+}
+
+void SnesEventManager::StartRasterTrace(uint32_t capacity)
+{
+	if(capacity == 0 || capacity > MaxRasterTraceEvents) {
+		throw std::out_of_range("invalid SNES raster trace capacity");
+	}
+	_rasterTrace.Events.clear();
+	_rasterTrace.Events.reserve(capacity);
+	_rasterTrace.Dropped = 0;
+	_rasterTraceCapacity = capacity;
+}
+
+SnesRasterTrace SnesEventManager::StopRasterTrace()
+{
+	_rasterTraceCapacity = 0;
+	return std::exchange(_rasterTrace, {});
+}
+
+void SnesEventManager::RecordRasterEvent(SnesRasterEvent event)
+{
+	if(_rasterTrace.Events.size() < _rasterTraceCapacity) {
+		event.Timing = GetRasterTiming();
+		_rasterTrace.Events.push_back(event);
+	} else {
+		_rasterTrace.Dropped++;
+	}
+}
+
+void SnesEventManager::RecordRasterBusOperation(const MemoryOperationInfo& operation, bool isRegister)
+{
+	uint16_t address = operation.Address & 0xFFFF;
+	bool dma = operation.Type == MemoryOperationType::DmaRead || operation.Type == MemoryOperationType::DmaWrite;
+	if(!dma && !(isRegister && address >= 0x2100 && address <= 0x213F)) {
+		return;
+	}
+
+	SnesRasterEvent event = {};
+	event.Type = DebugEventType::Register;
+	event.Operation = operation;
+	if(dma) {
+		uint8_t channel = _dmaController->GetActiveChannel();
+		event.DmaChannel = channel & 0x07;
+		event.IsHdma = (channel & SnesDmaController::HdmaChannelFlag) != 0;
+	}
+	RecordRasterEvent(event);
+}
+
+void SnesEventManager::EnableFrameObservation(bool enabled)
+{
+	_captureCompletedFrames = enabled;
+	if(!enabled) {
+		_completedFrame = {};
+	}
+}
+
+void SnesEventManager::RecordCompletedFrame(const uint16_t* pixels, uint16_t width, uint16_t height)
+{
+	if(!_captureCompletedFrames) {
+		return;
+	}
+	_completedFrame.Timing = GetRasterTiming();
+	_completedFrame.Width = width;
+	_completedFrame.Height = height;
+	_completedFrame.Pixels.assign(pixels, pixels + size_t(width) * height);
+}
+
+void SnesEventManager::ResetRasterObservation()
+{
+	_completedFrame.Pixels.clear();
+	_rasterTrace.Events.clear();
+	_rasterTrace.Dropped = 0;
+}
+
 void SnesEventManager::AddEvent(DebugEventType type, MemoryOperationInfo& operation, int32_t breakpointId)
 {
 	DebugEventInfo evt = {};
@@ -51,6 +134,12 @@ void SnesEventManager::AddEvent(DebugEventType type, MemoryOperationInfo& operat
 
 void SnesEventManager::AddEvent(DebugEventType type)
 {
+	if(IsRasterTraceActive() && (type == DebugEventType::Nmi || type == DebugEventType::Irq)) {
+		SnesRasterEvent event = {};
+		event.Type = type;
+		RecordRasterEvent(event);
+	}
+
 	DebugEventInfo evt = {};
 	evt.Type = type;
 	evt.Scanline = _ppu->GetScanline();

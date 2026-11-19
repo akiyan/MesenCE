@@ -69,6 +69,10 @@ public:
 	static int Rewind(lua_State* lua);
 
 	static int TakeScreenshot(lua_State* lua);
+	static int EnableSnesFrameCapture(lua_State* lua);
+	static int GetSnesPpuSnapshot(lua_State* lua);
+	static int StartSnesPpuTrace(lua_State* lua);
+	static int StopSnesPpuTrace(lua_State* lua);
 
 	static int CreateSavestate(lua_State* lua);
 	static int LoadSavestate(lua_State* lua);
@@ -83,6 +87,8 @@ public:
 
 	static int GetScriptDataFolder(lua_State* lua);
 	static int GetRomInfo(lua_State* lua);
+	static int StartAudioCapture(lua_State* lua);
+	static int GetAudioCapture(lua_State* lua);
 	static int GetLogWindowLog(lua_State* lua);
 
 	static void GenerateStateTable(Serializer& s, lua_State* lua);

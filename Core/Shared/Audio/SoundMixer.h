@@ -11,6 +11,25 @@ class WaveRecorder;
 class IAudioProvider;
 class CrossFeedFilter;
 class ReverbFilter;
+class AudioCapture;
+
+// SNES: CPU and SPC port accesses and DSP writes. Master System / Game Gear: PSG and stereo (port $06) writes.
+enum class AudioEventType { CpuRead, CpuWrite, SpcRead, SpcWrite, DspWrite, PsgWrite, PsgStereo };
+static constexpr uint32_t AudioCaptureMaxFrames = 216000;
+enum class AudioCaptureState { Idle, Armed, Recording, Complete, Error };
+
+struct AudioCaptureStatus
+{
+	AudioCaptureState State = AudioCaptureState::Idle;
+	uint32_t SampleRate = 0;
+	uint32_t ClockRate = 0;
+	uint32_t Frames = 0;
+	uint32_t Events = 0;
+	uint64_t DroppedEvents = 0;
+	uint64_t StartClock = 0;
+	uint64_t EndClock = 0;
+	uint64_t Samples = 0;
+};
 
 class SoundMixer
 {
@@ -31,6 +50,7 @@ private:
 
 	unique_ptr<CrossFeedFilter> _crossFeedFilter;
 	unique_ptr<ReverbFilter> _reverbFilter;
+	unique_ptr<AudioCapture> _audioCapture;
 
 	void ProcessEqualizer(int16_t* samples, uint32_t sampleCount, uint32_t targetRate);
 
@@ -52,5 +72,10 @@ public:
 	void StartRecording(string filepath);
 	void StopRecording();
 	bool IsRecording();
+	string StartAudioCapture(const string& wavPath, const string& eventsPath, uint32_t frames);
+	AudioCaptureStatus GetAudioCapture() const;
+	bool IsAudioCaptureRecording() const;
+	void EndAudioCaptureFrame(uint32_t frame, uint64_t masterClock, uint32_t clockRate);
+	void RecordAudioEvent(AudioEventType type, uint64_t masterClock, uint64_t spcCycle, uint16_t address, uint8_t value);
 	void GetLastSamples(int16_t& left, int16_t& right);
 };
