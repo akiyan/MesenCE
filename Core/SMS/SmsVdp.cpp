@@ -34,7 +34,10 @@ void SmsVdp::Init(Emulator* emu, SmsConsole* console, SmsCpu* cpu, SmsControlMan
 	//Without this, the bios runs in the exact same amount of time each time, causing
 	//the game to use the same value for R, which generates the same stage each time
 	//Unsure what the proper fix for this is (R is supposed to be 0 at reset based on the Z80 datasheet)
-	_state.Scanline = RandomHelper::GetValue(0, 200);
+	//A fixed RAM power-on state also starts at scanline 0, so that runs repeat frame for frame
+	EmuSettings* settings = _emu->GetSettings();
+	RamState ramState = _console->GetModel() == SmsModel::ColecoVision ? settings->GetCvConfig().RamPowerOnState : settings->GetSmsConfig().RamPowerOnState;
+	_state.Scanline = ramState == RamState::Random ? RandomHelper::GetValue(0, 200) : 0;
 	_state.VCounter = _state.Scanline;
 
 	//Offset VDP from CPU clock - passes VDPTest "HCounter correct"

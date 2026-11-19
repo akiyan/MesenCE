@@ -13,6 +13,7 @@
 #include "Shared/Video/DebugHud.h"
 #include "Shared/Video/VideoDecoder.h"
 #include "Shared/MessageManager.h"
+#include "Shared/Audio/SoundMixer.h"
 #include "Shared/CheatManager.h"
 #include "Shared/RewindManager.h"
 #include "Shared/SaveStateManager.h"
@@ -121,6 +122,7 @@ int LuaApi::GetLibrary(lua_State* lua)
 		{ "getDrawSurfaceSize", LuaApi::GetDrawSurfaceSize },
 
 		{ "getScreenBuffer", LuaApi::GetScreenBuffer },
+		{ "getScreenBytes", LuaApi::GetScreenBytes },
 		{ "setScreenBuffer", LuaApi::SetScreenBuffer },
 		{ "getPixel", LuaApi::GetPixel },
 
@@ -136,6 +138,10 @@ int LuaApi::GetLibrary(lua_State* lua)
 		{ "rewind", LuaApi::Rewind },
 
 		{ "takeScreenshot", LuaApi::TakeScreenshot },
+		{ "enableSnesFrameCapture", LuaApi::EnableSnesFrameCapture },
+		{ "getSnesPpuSnapshot", LuaApi::GetSnesPpuSnapshot },
+		{ "startSnesPpuTrace", LuaApi::StartSnesPpuTrace },
+		{ "stopSnesPpuTrace", LuaApi::StopSnesPpuTrace },
 
 		{ "isKeyPressed", LuaApi::IsKeyPressed },
 		{ "getInput", LuaApi::GetInput },
@@ -164,6 +170,11 @@ int LuaApi::GetLibrary(lua_State* lua)
 
 		{ "getScriptDataFolder", LuaApi::GetScriptDataFolder },
 		{ "getRomInfo", LuaApi::GetRomInfo },
+		{ "startAudioCapture", LuaApi::StartAudioCapture },
+		{ "stopAudioCapture", LuaApi::StopAudioCapture },
+		{ "getAudioCapture", LuaApi::GetAudioCapture },
+		{ "startSnesAudioCapture", LuaApi::StartAudioCapture },
+		{ "getSnesAudioCapture", LuaApi::GetAudioCapture },
 		{ "getLogWindowLog", LuaApi::GetLogWindowLog },
 		{ NULL, NULL }
 	};
@@ -672,6 +683,27 @@ int LuaApi::GetScreenBuffer(lua_State* lua)
 	}
 
 	return 1;
+}
+
+int LuaApi::GetScreenBytes(lua_State* lua)
+{
+	LuaCallHelper l(lua);
+	checkparams();
+
+	auto [filter, frameSize] = GetRenderedFrame();
+	const uint32_t* rgbBuffer = filter->GetOutputBuffer();
+	size_t count = (size_t)frameSize.Height * frameSize.Width;
+
+	luaL_Buffer buffer;
+	uint8_t* out = (uint8_t*)luaL_buffinitsize(lua, &buffer, count * 4);
+	for(size_t i = 0; i < count; i++) {
+		uint32_t color = rgbBuffer[i] & 0xFFFFFF;
+		memcpy(out + i * 4, &color, 4);
+	}
+	luaL_pushresultsize(&buffer, count * 4);
+	lua_pushinteger(lua, frameSize.Width);
+	lua_pushinteger(lua, frameSize.Height);
+	return 3;
 }
 
 int LuaApi::SetScreenBuffer(lua_State* lua)
@@ -1222,4 +1254,72 @@ int LuaApi::GetMasterClock(lua_State* lua)
 	checkparams();
 	l.Return(_emu->GetMasterClock());
 	return l.ReturnCount();
+}
+
+int LuaApi::StartAudioCapture(lua_State* lua)
+{
+	if(lua_gettop(lua) != 3) {
+		return luaL_error(lua, "expected WAV path, event path or nil, and frame count");
+	}
+	if(!_emu->GetSettings()->GetDebugConfig().ScriptAllowIoOsAccess) {
+		return luaL_error(lua, "audio capture requires Lua file I/O access");
+	}
+	size_t wavSize, eventsSize = 0;
+	const char* wavPath = luaL_checklstring(lua, 1, &wavSize);
+	bool hasEvents = !lua_isnil(lua, 2);
+	const char* eventsPath = hasEvents ? luaL_checklstring(lua, 2, &eventsSize) : "";
+	lua_Integer frames = luaL_checkinteger(lua, 3);
+	if(wavSize == 0 || memchr(wavPath, 0, wavSize) || (hasEvents && (eventsSize == 0 || memchr(eventsPath, 0, eventsSize)))) {
+		return luaL_error(lua, "invalid audio capture output paths");
+	}
+	if(frames < 1 || frames > AudioCaptureMaxFrames) {
+		return luaL_error(lua, "audio capture requires 1 to 1080000 frames");
+	}
+	string failure = _emu->GetSoundMixer()->StartAudioCapture(wavPath, eventsPath, (uint32_t)frames);
+	if(!failure.empty()) {
+		lua_pushnil(lua);
+		lua_pushlstring(lua, failure.data(), failure.size());
+		return 2;
+	}
+	lua_pushboolean(lua, true);
+	return 1;
+}
+
+int LuaApi::StopAudioCapture(lua_State* lua)
+{
+	if(lua_gettop(lua) != 0) {
+		return luaL_error(lua, "expected no parameters");
+	}
+	if(!_emu->GetSoundMixer()->StopAudioCapture()) {
+		lua_pushnil(lua);
+		lua_pushliteral(lua, "no audio capture is active");
+		return 2;
+	}
+	lua_pushboolean(lua, true);
+	return 1;
+}
+
+int LuaApi::GetAudioCapture(lua_State* lua)
+{
+	if(lua_gettop(lua) != 0) {
+		return luaL_error(lua, "expected no parameters");
+	}
+	AudioCaptureStatus status = _emu->GetSoundMixer()->GetAudioCapture();
+	constexpr const char* stateNames[] = { "idle", "armed", "recording", "complete", "error" };
+	lua_newtable(lua);
+	lua_pushstring(lua, stateNames[(unsigned)status.State]);
+	lua_setfield(lua, -2, "state");
+	auto setNumber = [&](const char* name, uint64_t value) {
+		lua_pushinteger(lua, (lua_Integer)value);
+		lua_setfield(lua, -2, name);
+	};
+	setNumber("sampleRate", status.SampleRate);
+	setNumber("clockRate", status.ClockRate);
+	setNumber("frames", status.Frames);
+	setNumber("events", status.Events);
+	setNumber("droppedEvents", status.DroppedEvents);
+	setNumber("startClock", status.StartClock);
+	setNumber("endClock", status.EndClock);
+	setNumber("samples", status.Samples);
+	return 1;
 }

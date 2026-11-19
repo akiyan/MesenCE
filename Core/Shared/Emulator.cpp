@@ -109,6 +109,11 @@ void Emulator::Release()
 
 void Emulator::Run()
 {
+	RunWithFrameBoundary({});
+}
+
+void Emulator::RunWithFrameBoundary(const std::function<bool()>& beforeFrame)
+{
 	if(!_console) {
 		return;
 	}
@@ -132,7 +137,7 @@ void Emulator::Run()
 	_frameLimiter.reset(new FrameLimiter(_frameDelay));
 	_lastFrameTimer.Reset();
 
-	while(!_stopFlag) {
+	while(!_stopFlag && (!beforeFrame || beforeFrame())) {
 		bool useRunAhead = _settings->GetEmulationConfig().RunAheadFrames > 0 && !_debugger && !_audioPlayerHud && !_rewindManager->IsRewinding() && _settings->GetEmulationSpeed() > 0 && _settings->GetEmulationSpeed() <= 100;
 		if(useRunAhead) {
 			RunFrameWithRunAhead();

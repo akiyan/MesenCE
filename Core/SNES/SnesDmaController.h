@@ -8,9 +8,10 @@ class SnesMemoryManager;
 
 class SnesDmaController final : public ISerializable
 {
-private:
+public:
 	static constexpr uint8_t HdmaChannelFlag = 0x40;
 
+private:
 	SnesDmaControllerState _state = {};
 
 	bool _needToProcess = false;

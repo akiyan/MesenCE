@@ -10,6 +10,7 @@
 #include "Shared/Emulator.h"
 #include "Shared/BatteryManager.h"
 #include "Shared/EmuSettings.h"
+#include "Shared/Audio/SoundMixer.h"
 #include "Utilities/CRC32.h"
 
 SmsMemoryManager::SmsMemoryManager()
@@ -334,6 +335,14 @@ void SmsMemoryManager::WritePort(uint8_t port, uint8_t value)
 	}
 }
 
+void SmsMemoryManager::RecordAudioWrite(AudioEventType type, uint8_t port, uint8_t value)
+{
+	SoundMixer* mixer = _emu->GetSoundMixer();
+	if(mixer->IsAudioCaptureRecording()) {
+		mixer->RecordAudioEvent(type, _console->GetMasterClock(), 0, port, value);
+	}
+}
+
 void SmsMemoryManager::WriteSmsPort(uint8_t port, uint8_t value)
 {
 	bool isGameGear = _model == SmsModel::GameGear;
@@ -359,6 +368,7 @@ void SmsMemoryManager::WriteSmsPort(uint8_t port, uint8_t value)
 
 		case 0x40:
 		case 0x41:
+			RecordAudioWrite(AudioEventType::PsgWrite, port, value);
 			_psg->Write(value);
 			break;
 
@@ -403,6 +413,7 @@ void SmsMemoryManager::WriteGameGearPort(uint8_t port, uint8_t value)
 
 		//Sound panning - write-only
 		case 6:
+			RecordAudioWrite(AudioEventType::PsgStereo, port, value);
 			_psg->WritePanningReg(value);
 			break;
 

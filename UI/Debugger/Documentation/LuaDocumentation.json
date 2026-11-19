@@ -250,6 +250,12 @@
 	"returnValue": { "type": "Array", "description": "Array of ARGB values" }
 },
 {
+	"name": "getScreenBytes",
+	"category": "Drawing",
+	"description": "Returns the contents of the console's screen as a binary string of little-endian 0x00RRGGBB pixels (4 bytes per pixel), followed by the width and height. The pixels are those of emu.getScreenBuffer(), without a table entry per pixel.",
+	"returnValue": { "type": "String", "description": "Pixel bytes; the width and height follow as the second and third return values" }
+},
+{
 	"name": "getScreenSize",
 	"category": "Drawing",
 	"description": "Returns a table containing the size of the console's current screen output.",
